@@ -1,94 +1,69 @@
-import uuid
-from flask import Flask, request
-from db import items , stores
-from flask_smorest import abort
+import os 
+
+from flask import Flask, jsonify
+from flask_smorest import Api
+from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
+
+#from db import db
+#from blocklist import BLOCKLIST
+
+from db import db
+import models
+
+from resources.item import blp as ItemBlueprint
+from resources.store import blp as StoreBlueprint
+from resources.tag import blp as TagBlueprint
 
 
+def create_app(db_url=None):
+    app = Flask(__name__)
+    app.config["API_TITLE"] = "Stores REST API"
+    app.config["API_VERSION"] = "v1"
+    app.config["OPENAPI_VERSION"] = "3.0.3"
+    app.config["OPENAPI_URL_PREFIX"] = "/"
+    app.config["OPENAPI_SWAGGER_UI_PATH"] = "/swagger-ui"
+    app.config[
+        "OPENAPI_SWAGGER_UI_URL"
+    ] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
+    #app.config["SQLALCHEMY_DATABASE_URI"] =db_url or  "sqlite:///instance/data.db" 
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/data.db'
 
-
-app = Flask(__name__)
-
-
-
-@app.get("/store") # http://127.0.0.1:5000/store
-def get_stores():
-    return {"name":list(stores.values)}
-
-
-@app.post("/store")
-def create_store():
-    store_date = request.get_json()
-    store_id = uuid.uuid4().hex
-    store = {**store_date, "id":store_id}
-    stores[store_id] = store
-    return store , 201
-
-
-@app.post("/item")
-def create_item():
-    item_data = request.get_json()
-    if(
-        "price" not in item_data
-        or "store_id" not in item_data
-        or "name" not in item_data
-    ):
-        abort(404, 
-              message="Bad request . Ensure 'price', 'store_id', and 'name' are included in json payload ")
-    # check if item exist
-    for item in items.values():
-        if( 
-           item_data["name"] == item["name"] 
-           and  item_data["store_id"] == item["store_id"]
-           ):
-            abort(404, message=f"Item already exists.")
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["PROPAGATE_EXCEPTIONS"] = True
     
-    if item_data["store_id"] not in stores:
-        abort(404 ,message="store not found")
-        
-    item_id = uuid.uuid4().hex
-    item = {**item_data, "id": item_id}
-    items[item_id] = item
-    return item ,201
+    db.init_app(app)
+    
+    #migrate = Migrate(app, db)
+    api = Api(app)
+    
+    
+    
+    #@app.before_first_request
+    #def before_first_request():
+    #    db.create_all()
 
-@app.get("/store/<string:store_id>")
-def get_store(store_id):
-    try:
-        return stores[store_id]
-    except KeyError:
-        abort(404 , message="store id not found")
-        
-    
-@app.get("/item/<string:item_id>")
-def get_item(item_id):
-    try:
-        return items[item_id]
-    except KeyError:
-        abort(404 , message="Item not found")
-        
-    
-@app.get("/item")
-def get_all_items():
-    return {"items":list(items.values())}
+    # @jwt.additional_claims_loader
+    # def add_claims_to_jwt(identity):
+    #     # TODO: Read from a config file instead of hard-coding
+    #     if identity == 1:
+    #         return {"is_admin": True}
+    #     return {"is_admin": False}
 
-@app.delete("/item/<string:item_id>")
-def delete_item(item_id):
-    try:
-        del items[item_id]
-        return {"message":"Item deleted."}
-    except KeyError:
-        abort(404,message="Item not found.")
-        
-@app.put("/item/<string:item_id>")
-def update_item(item_id):
-    item_data = request.get_json()
-    if "price" not in item_data or "name" not in item_data :
-        abort(404, message="Bad request. Ensure 'price' and 'name' are included in the JSON payload ")
-        
-    try:
-        item = items[item_id]
-        item |= item_data   #pipe items in item_data replaces old items in item 
-        
-        return item
-    except KeyError :
-        abort(404,  message= "Item not found.")
+    # @jwt.token_in_blocklist_loader
+    # def check_if_token_in_blocklist(jwt_header, jwt_payload):
+    #     return jwt_payload["jti"] in BLOCKLIST
+
+    # @jwt.expired_token_loader
+    # def expired_token_callback(jwt_header, jwt_payload):
+    #     return (
+    #         jsonify({"message": "The token has expired.", "error": "token_expired"}),
+    #         401,
+    #     )
     
+    
+    api.register_blueprint(ItemBlueprint)
+    api.register_blueprint(StoreBlueprint)
+    api.register_blueprint(TagBlueprint)
+    
+    return app
